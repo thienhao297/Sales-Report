@@ -1,0 +1,47 @@
+REPORT zsales_report.
+
+*DECLERATION
+INCLUDE zsales_reporttop.
+*LOGIC PROCESSING
+INCLUDE zsales_reportf01.
+
+INCLUDE zsales_report_status.
+
+INCLUDE zsales_report_user_command.
+
+************************************************************************
+*INITIALIZATION
+************************************************************************
+INITIALIZATION.
+
+PERFORM initial_data.
+
+************************************************************************
+*AT SELECTION-SCREEN OUTPUT
+************************************************************************
+AT SELECTION-SCREEN OUTPUT.
+
+  PERFORM edit_screen.
+
+************************************************************************
+*AT SELECTION-SCREEN
+************************************************************************
+AT SELECTION-SCREEN.
+
+  PERFORM user_command.
+
+************************************************************************
+*START-OF-SELECTION
+************************************************************************
+START-OF-SELECTION.
+
+ DATA: lv_rp TYPE REF TO gcl_rp.
+
+  CREATE OBJECT lv_rp.
+
+  CALL METHOD: lv_rp->get_data.
+
+************************************************************************
+*END-OF-SELECTION
+************************************************************************
+END-OF-SELECTION.
