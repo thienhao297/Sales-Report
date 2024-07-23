@@ -1,0 +1,66 @@
+TABLES: bkpf, vbrk, vbrp, likp.
+
+""Structure deleration
+
+TYPES: BEGIN OF ts_rp,
+         doc_num   TYPE C LENGTH 20,
+         customer  TYPE C LENGTH 10,
+         cus_name  TYPE C LENGTH 122,
+         material  TYPE C LENGTH 20,
+         item_desc TYPE C LENGTH 50,
+         ref       TYPE C LENGTH 10,
+         load_day  TYPE dats,
+         quantity  TYPE vbrp-fkimg,
+         unit      TYPE C LENGTH 10,
+         revenue   TYPE zde_sales_report_curr,
+         vat       TYPE zde_sales_report_curr,
+         amount    TYPE zde_sales_report_curr,
+         currency  TYPE fins_currfc,
+         doc_item  TYPE C LENGTH 122,
+         storage   TYPE C LENGTH 10,
+         prof_cent TYPE C LENGTH 10,
+         post_date TYPE C LENGTH 10,
+       END OF ts_rp,
+       tt_rp TYPE STANDARD TABLE OF ts_rp.
+
+""Variable deleration
+DATA: gt_rp      TYPE tt_rp,
+      gs_rp      TYPE ts_rp,
+      gt_fld     TYPE STANDARD TABLE OF lvc_s_fcat,
+      gs_fld     TYPE lvc_s_fcat,
+      gt_fldsort TYPE STANDARD TABLE OF lvc_s_sort,
+      gs_fldsort TYPE lvc_s_sort,
+      gs_layout  TYPE lvc_s_layo.
+
+"" ALV decleration
+DATA: go_cont TYPE REF TO cl_gui_custom_container,
+      go_grd  TYPE REF TO cl_gui_alv_grid.
+
+"" Select option decleration
+DATA: lv_cc  TYPE bukrs,
+      lv_pd  TYPE budat,
+      lv_cus TYPE kunnr,
+      lv_mat TYPE matnr,
+      lv_dn  TYPE belnr_d,
+      lv_pc  TYPE prctr.
+
+************************************************************************
+*SELECTION SCREEN
+************************************************************************
+
+SELECTION-SCREEN BEGIN OF BLOCK block1 WITH FRAME TITLE TEXT-001.
+
+    SELECT-OPTIONS s_cc  FOR lv_cc.
+    SELECTION-SCREEN SKIP.
+    SELECT-OPTIONS s_pd  FOR lv_pd.
+    SELECTION-SCREEN SKIP.
+    SELECT-OPTIONS s_cus FOR lv_cus.
+    SELECTION-SCREEN SKIP.
+    SELECT-OPTIONS s_mat FOR lv_mat.
+    SELECTION-SCREEN SKIP.
+    SELECT-OPTIONS s_dn  FOR lv_dn MATCHCODE OBJECT sales_report_docnum.
+    SELECTION-SCREEN SKIP.
+    SELECT-OPTIONS s_pc  FOR lv_pc.
+
+
+SELECTION-SCREEN END OF BLOCK block1.
