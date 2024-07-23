@@ -1,0 +1,15 @@
+
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_9001  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE user_command_9001 INPUT.
+
+  IF sy-ucomm = 'BACK'  OR sy-ucomm = 'CANCEL'.
+    LEAVE TO SCREEN 0.
+
+  ELSEIF sy-ucomm = 'EXIT'.
+    LEAVE PROGRAM.
+  ENDIF.
+ENDMODULE.
