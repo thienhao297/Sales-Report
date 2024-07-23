@@ -1,0 +1,583 @@
+
+FORM initial_data .
+
+  GET PARAMETER ID 'BUK' FIELD s_cc-low.
+
+  APPEND s_cc.
+
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form edit_screen
+*&---------------------------------------------------------------------*
+
+FORM edit_screen .
+
+  LOOP AT SCREEN.
+    IF screen-name = 'S_CC-LOW'
+      OR screen-name = 'S_PD-LOW'.
+      screen-required = 2.
+      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form user_command
+*&---------------------------------------------------------------------*
+
+FORM user_command .
+
+  IF s_cc IS INITIAL AND sy-ucomm <> '%001' .
+"" Check cursor bỏ qua không báo lỗi require input field khi không nhập giá trị high cho select-options
+    MESSAGE e002(zsales_report).
+  ENDIF.
+
+  IF s_cc IS INITIAL AND sy-ucomm <> '%001' .
+    MESSAGE e002(zsales_report).
+  ENDIF.
+
+  """CHECK DATA KHONG CO TRONG F4
+  ""Company Code
+  SELECT bukrs FROM t001 WHERE bukrs IN @s_cc INTO TABLE @DATA(lt_cc).
+
+  IF lt_cc IS INITIAL.
+    MESSAGE s003(zsales_report) WITH TEXT-002 DISPLAY LIKE 'E'.
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+  ""Posting Date
+  SELECT budat FROM bkpf WHERE budat IN @s_pd INTO TABLE @DATA(lt_pd).
+
+  IF lt_pd IS INITIAL.
+    MESSAGE s003(zsales_report) WITH TEXT-003 DISPLAY LIKE 'E'.
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+  ""Customer
+  SELECT kunnr FROM kna1 WHERE kunnr IN @s_cus INTO TABLE @DATA(lt_cus).
+
+  IF lt_cus IS INITIAL.
+    MESSAGE s003(zsales_report) WITH TEXT-004 DISPLAY LIKE 'E'.
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+  ""Material
+  SELECT matnr FROM mara WHERE matnr IN @s_mat INTO TABLE @DATA(lt_mat).
+
+  IF lt_mat IS INITIAL.
+    MESSAGE s003(zsales_report) WITH TEXT-005 DISPLAY LIKE 'E'.
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+  ""Document Number
+  SELECT belnr FROM bkpf WHERE belnr IN @s_dn INTO TABLE @DATA(lt_dn).
+
+  IF lt_dn IS INITIAL.
+    MESSAGE s003(zsales_report) WITH TEXT-006 DISPLAY LIKE 'E'.
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+  ""Profit Center
+  SELECT prctr FROM cepc WHERE prctr IN @s_pc INTO TABLE @DATA(lt_pc).
+
+  IF lt_pc IS INITIAL.
+    MESSAGE s003(zsales_report) WITH TEXT-007 DISPLAY LIKE 'E'.
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+ENDFORM.
+
+
+************************************************************************
+*CLASS
+************************************************************************
+
+CLASS gcl_rp DEFINITION.
+
+  PUBLIC SECTION.
+    METHODS: get_data,
+      fld_cat.
+
+ENDCLASS.
+
+
+CLASS gcl_rp IMPLEMENTATION.
+
+  METHOD get_data.
+
+    TYPES: BEGIN OF ts_rp_4,
+             belnr    TYPE bseg-belnr,
+             bukrs    TYPE bseg-bukrs,
+             gjahr    TYPE bseg-gjahr,
+             posnr    TYPE vbrp-posnr,
+             doc_item TYPE char122,
+           END OF ts_rp_4,
+           tt_rp_4 TYPE STANDARD TABLE OF ts_rp_4.
+
+    DATA: lr_ar_dt TYPE RANGE OF bkpf-blart,
+          lr_ar_bt TYPE RANGE OF vbrk-fkart.
+    DATA: lt_rp_4 TYPE tt_rp_4,
+          ls_rp_4 TYPE ts_rp_4.
+
+    "" FILTER DATA TU SD
+
+    lr_ar_dt = CORRESPONDING #( zcl_ca_util_tvarvc=>get_selopt( 'Z********_DOCTYPE' ) ).
+    lr_ar_bt = CORRESPONDING #( zcl_ca_util_tvarvc=>get_selopt( 'Z********_BILLINGTYPE' ) ).
+
+    "" SELECT DATA FROM TABLE
+
+    "" BSEG1
+    SELECT DISTINCT g~belnr,
+                    g~bukrs,
+                    g~gjahr,
+                    abs( SUM( CASE WHEN g~ktosl = 'MWS' THEN g~pswbt END ) ) AS vat
+            FROM bseg AS g
+                 WHERE g~ktosl = 'MWS'
+                 GROUP BY   g~belnr,
+                            g~bukrs,
+                            g~gjahr,
+                            g~ktosl
+             INTO TABLE @DATA(lt_bseg1).
+
+    SORT lt_bseg1 BY bukrs belnr gjahr ASCENDING.
+
+    ""  Final Select
+*
+    SELECT DISTINCT  b~belnr,
+                     b~bukrs,
+                     b~gjahr,
+                     b~budat,
+                     b~blart,
+                     b~awkey,
+                     b~xblnr,
+                     k~vbeln,
+                     k~kunag,
+                     concat_with_space( concat_with_space( t~name_org2, t~name_org3,1 ), t~name_org4, 1 ) AS cus_name,
+                     p~posnr,
+                     p~matnr,
+                     p~arktx,
+                     l~lddat,
+                     p~fkimg,
+                     p~vrkme,
+                     p~lgort,
+                     g1~vat,
+                     g2~pswbt AS amount,
+                     g2~rfccur,
+                     g3~prctr
+    FROM bkpf AS b
+      INNER JOIN vbrk AS k
+              ON k~vbeln = b~awkey
+      INNER JOIN vbrp AS p
+              ON p~vbeln = b~awkey
+      LEFT JOIN  but000 AS t
+              ON t~partner = k~kunag
+      LEFT JOIN  likp AS l
+              ON p~vgbel = l~vbeln
+      LEFT JOIN  @lt_bseg1 AS g1
+              ON b~bukrs = g1~bukrs AND b~gjahr = g1~gjahr AND b~belnr = g1~belnr
+      LEFT JOIN  bseg AS g2
+              ON b~bukrs = g2~bukrs AND b~gjahr = g2~gjahr AND b~belnr = g2~belnr
+      LEFT JOIN  bseg AS g3
+              ON b~bukrs = g3~bukrs AND b~gjahr = g3~gjahr AND b~belnr = g3~belnr
+      WHERE   b~bukrs  IN @s_cc
+          AND b~budat  IN @s_pd
+          AND b~belnr  IN @s_dn
+          AND b~awref_rev = ''
+          AND b~blart  IN @lr_ar_dt
+          AND k~kunag  IN @s_cus
+          AND k~fkart  IN @lr_ar_bt
+          AND p~matnr  IN @s_mat
+          AND g3~prctr IN @s_pc
+          AND g2~koart = 'D'
+          AND g3~prctr <> ''
+      INTO TABLE @DATA(lt_rp_1).
+
+    IF sy-subrc <> 0.
+      MESSAGE s001(zsales_report) DISPLAY LIKE 'E'.
+      LEAVE LIST-PROCESSING.
+    ENDIF.
+
+    SORT lt_rp_1 BY belnr bukrs gjahr posnr ASCENDING.
+
+*    cl_demo_output=>display( lt_rp_1 ).
+
+*    DELETE ADJACENT DUPLICATES FROM lt_rp_1 COMPARING ALL FIELDS.
+
+    "" SELECT DATA GET DOC ITEM IF NO DATA REPLACE BANK
+
+    LOOP AT lt_rp_1 INTO DATA(wa).
+
+      DATA lt_long_text_fm TYPE tline_t.
+      DATA(lv_docname) = CONV tdobname( |{ wa-bukrs }{ wa-belnr }{ wa-gjahr }001| ).
+
+      CALL FUNCTION 'READ_TEXT'
+        EXPORTING
+          id                      = '0001'
+          language                = sy-langu
+          name                    = lv_docname
+          object                  = 'DOC_ITEM'
+        TABLES
+          lines                   = lt_long_text_fm
+        EXCEPTIONS
+          id                      = 1
+          language                = 2
+          name                    = 3
+          not_found               = 4
+          object                  = 5
+          reference_check         = 6
+          wrong_access_to_archive = 7
+          OTHERS                  = 8.
+
+      IF sy-subrc <> 0.
+        ls_rp_4-doc_item = ''.
+      ELSEIF sy-subrc = 0.
+        DATA rv_longtext TYPE char255.
+        DATA(lv_longtext) = REDUCE #( INIT lv_line TYPE string
+                                    FOR ls IN lt_long_text_fm
+                                    NEXT lv_line &&= | { ls-tdline } | ).
+        IF lv_longtext CS '***'.
+          rv_longtext = substring_before( val = condense( lv_longtext ) sub = '***' ).
+        ELSE.
+          rv_longtext = condense( lv_longtext ).
+        ENDIF.
+        ls_rp_4-doc_item = rv_longtext.
+      ENDIF.
+
+      ls_rp_4-belnr  = wa-belnr.
+      ls_rp_4-bukrs  = wa-bukrs.
+      ls_rp_4-gjahr  = wa-gjahr.
+      ls_rp_4-posnr  = wa-posnr.
+      APPEND ls_rp_4 TO lt_rp_4.
+      CLEAR ls_rp_4.
+    ENDLOOP.
+
+    SORT lt_rp_4 BY belnr bukrs gjahr posnr ASCENDING.
+    """""""""""""""""""""""""""""""""""""""""""""""""""""
+
+    "" INPUT ALV DATA
+    SELECT   a~belnr  AS doc_num,
+             a~kunag  AS customer,
+             a~cus_name,
+             a~matnr  AS material,
+             a~arktx  AS item_desc,
+             a~xblnr  AS ref,
+             a~lddat  AS load_day,
+             a~fkimg  AS quantity,
+             a~vrkme  AS unit,
+             a~vat,
+             a~amount,
+             d~doc_item,
+             a~rfccur AS currency,
+             a~lgort  AS storage,
+             a~prctr  AS prof_cent,
+             a~budat  AS post_date
+      FROM @lt_rp_1 AS a
+          INNER JOIN @lt_rp_4 AS d
+                ON a~bukrs = d~bukrs AND a~gjahr = d~gjahr AND a~belnr = d~belnr AND a~posnr = d~posnr
+     INTO TABLE @DATA(lt_final).
+
+    LOOP AT lt_final INTO DATA(waf).
+
+      DATA: lt_ref1   TYPE string,
+            lt_ref2   TYPE string,
+            lv_cus    TYPE char10,
+            lv_amount TYPE string,
+            lv_vat    TYPE string.
+
+      "" lay ten san pham = FM read text
+      DATA lt_item_desc TYPE tline_t.
+      DATA(lv_itemd) = CONV tdobname( |{ waf-material }| ).
+
+      CALL FUNCTION 'READ_TEXT'
+        EXPORTING
+          id                      = 'GRUN'
+          language                = sy-langu
+          name                    = lv_itemd
+          object                  = 'MATERIAL'
+        TABLES
+          lines                   = lt_item_desc
+        EXCEPTIONS
+          id                      = 1
+          language                = 2
+          name                    = 3
+          not_found               = 4
+          object                  = 5
+          reference_check         = 6
+          wrong_access_to_archive = 7
+          OTHERS                  = 8.
+      IF sy-subrc <> 0.
+        gs_rp-item_desc = |{ waf-item_desc }|.
+      ELSEIF sy-subrc = 0.
+        DATA rv_item_desc TYPE char255.
+        DATA(lv_item_desc) = REDUCE #( INIT lv_line TYPE string
+                                    FOR ls IN lt_item_desc
+                                    NEXT lv_line &&= | { ls-tdline } | ).
+        IF lv_item_desc CS '***'.
+          rv_item_desc = substring_before( val = condense( lv_item_desc ) sub = '***' ).
+        ELSE.
+          rv_item_desc = condense( lv_item_desc ).
+        ENDIF.
+        gs_rp-item_desc = rv_item_desc.
+      ENDIF.
+
+      """ Xu ly chuoi REF co dau #
+      IF waf-ref CS '#'.
+        SPLIT waf-ref AT '#' INTO lt_ref1 lt_ref2.
+        gs_rp-ref       = |{ lt_ref2 }| .
+      ELSE.
+        gs_rp-ref       = |{ waf-ref }| .
+      ENDIF.
+
+      """ Convert data raw
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING
+          input  = waf-customer
+        IMPORTING
+          output = lv_cus.
+
+      CALL FUNCTION 'CONVERSION_EXIT_AU132_OUTPUT'
+        EXPORTING
+          input    = waf-amount
+          currency = waf-currency
+        IMPORTING
+          output   = lv_amount.
+
+      CALL FUNCTION 'CONVERSION_EXIT_AU132_OUTPUT'
+        EXPORTING
+          input    = waf-vat
+          currency = waf-currency
+        IMPORTING
+          output   = lv_vat.
+
+      gs_rp-doc_num   = |{ waf-doc_num }| .
+      gs_rp-customer  = |{ lv_cus }| .
+      gs_rp-cus_name  = |{ waf-cus_name }| .
+      gs_rp-material  = |{ waf-material }| .
+      gs_rp-load_day  = |{ waf-load_day }| .
+      gs_rp-quantity  = |{ waf-quantity }| .
+      gs_rp-unit      = |{ waf-unit }| .
+      gs_rp-vat       = |{ lv_vat }| .
+      gs_rp-amount    = |{ lv_amount }| .
+      gs_rp-revenue   = |{ gs_rp-amount - gs_rp-vat }|.
+      IF gs_rp-revenue < 0 .
+        gs_rp-revenue = - gs_rp-revenue.
+      ENDIF.
+      gs_rp-currency  = |{ waf-currency }| .
+      gs_rp-doc_item  = |{ waf-doc_item }| .
+      gs_rp-storage   = |{ waf-storage }| .
+      gs_rp-prof_cent = |{ waf-prof_cent }| .
+      gs_rp-post_date = |{ waf-post_date+6(2) }.{ waf-post_date+4(2) }.{ waf-post_date+0(4) }|.
+      APPEND gs_rp TO gt_rp.
+      CLEAR: gs_rp.
+    ENDLOOP.
+
+    SORT gt_rp BY doc_num customer ASCENDING.
+
+    IF gt_rp IS INITIAL.
+      MESSAGE s001(zsales_report) DISPLAY LIKE 'E'.
+      LEAVE LIST-PROCESSING.
+    ELSE.
+
+      CALL METHOD: fld_cat.
+      CALL SCREEN 9001.
+
+    ENDIF.
+  ENDMETHOD.
+
+  "" DECLERATION FIELD CATALOG
+
+  METHOD fld_cat.
+
+    CLEAR gs_fld.
+    REFRESH gt_fld.
+    DATA: lv_no TYPE i VALUE 0.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'DOC_NUM'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Số chứng từ'.
+    gs_fld-just    = 'L'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'CUSTOMER'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Mã khách hàng'.
+    gs_fld-just    = 'L'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'CUS_NAME'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Tên khách hàng'.
+    gs_fld-just    = 'L'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'MATERIAL'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Mã sản phẩm'.
+    gs_fld-just    = 'L'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'ITEM_DESC'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Tên sản phẩm'.
+    gs_fld-just    = 'L'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'REF'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Số hóa đơn'.
+    gs_fld-just    = 'R'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'LOAD_DAY'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Ngày giao hàng'.
+    gs_fld-just    = 'L'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'QUANTITY'.
+    gs_fld-qfieldname = 'UNIT'. "" qfieldname : UNIT | cfieldname: CUKKY
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Số lượng'.
+    gs_fld-just    = 'C'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'UNIT'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Đơn vị tính'.
+    gs_fld-just    = 'R'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'REVENUE'.
+    gs_fld-cfieldname = 'CURRENCY'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Doanh thu'.
+    gs_fld-just    = 'R'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'VAT'.
+    gs_fld-cfieldname = 'CURRENCY'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Thuế GTGT'.
+    gs_fld-just    = 'R'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'AMOUNT'.
+    gs_fld-cfieldname = 'CURRENCY'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Thành tiền'.
+    gs_fld-just    = 'R'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'CURRENCY'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Đơn vị'.
+    gs_fld-just    = 'L'.
+    gs_fld-col_opt = 'X'.
+    gs_fld-no_out    = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'DOC_ITEM'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Diễn giải'.
+    gs_fld-just    = 'R'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'STORAGE'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Kho'.
+    gs_fld-just    = 'R'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'PROF_CENT'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Trung tâm lợi nhuận'.
+    gs_fld-just    = 'R'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    lv_no = lv_no + 1.
+    gs_fld-col_pos = lv_no.
+    gs_fld-fieldname = 'POST_DATE'.
+    gs_fld-tabname = 'GT_RP'.
+    gs_fld-reptext = 'Ngày Hạch Toán'.
+    gs_fld-just    = 'R'.
+    gs_fld-col_opt = 'X'.
+    APPEND gs_fld TO gt_fld.
+    CLEAR gs_fld.
+
+    gs_fldsort-fieldname = 'DOC_NUM'.
+    gs_fldsort-spos = 1.
+    gs_fldsort-up = 'X'.
+    APPEND gs_fldsort TO gt_fldsort.
+
+    CLEAR: gs_fldsort.
+    gs_fldsort-fieldname = 'CUSTOMER'.
+    gs_fldsort-spos = 2.
+    gs_fldsort-up = 'X'.
+    APPEND gs_fldsort TO gt_fldsort.
+  ENDMETHOD.
+ENDCLASS.
