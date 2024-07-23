@@ -1,0 +1,30 @@
+
+*&---------------------------------------------------------------------*
+*& Module STATUS_9001 OUTPUT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+MODULE status_9001 OUTPUT.
+
+    SET PF-STATUS 'SELECT_RP'.
+    SET TITLEBAR 'TITLE_ALV_RP'.
+
+    CREATE OBJECT go_cont
+      EXPORTING
+        container_name = 'CONTAINER'.
+
+    CREATE OBJECT go_grd
+      EXPORTING
+        i_parent = go_cont.
+    gs_layout-grid_title = | Từ ngày { s_pd-low+6(2) }/{ s_pd-low+4(2) }/{ s_pd-low+0(4) } đến ngày { s_pd-high+6(2) }/{ s_pd-high+4(2) }/{ s_pd-high+0(4) }|.
+
+
+    CALL METHOD go_grd->set_table_for_first_display
+      EXPORTING
+        is_layout       = gs_layout
+      CHANGING
+        it_outtab       = gt_rp
+        it_fieldcatalog = gt_fld
+        it_sort         = gt_fldsort.
+
+ENDMODULE.
